@@ -21,6 +21,20 @@ connection.connect((err) => {
 app.use(cors());
 app.use(bodyParser.json());
 
+function formatDate(date) {
+  const d = new Date(date);
+  let month = '' + (d.getMonth() + 1);
+  let day = '' + d.getDate();
+  const year = d.getFullYear();
+
+  if (month.length < 2) 
+    month = '0' + month;
+  if (day.length < 2) 
+    day = '0' + day;
+
+  return [year, month, day].join('-');
+}
+
 
  app.get('/pacientes', (req, res) => {
     connection.query('SELECT * FROM pacientes', (err, results) => {
@@ -49,9 +63,18 @@ app.use(bodyParser.json());
   app.put('/pacientes/:id', (req, res) => {
     const id = req.params.id;
     const datosActualizados = req.body;
+  
+    if (datosActualizados.fechaNacimiento) {
+      datosActualizados.fechaNacimiento = formatDate(datosActualizados.fechaNacimiento);
+    }
+  
     connection.query('UPDATE pacientes SET ? WHERE id = ?', [datosActualizados, id], (err, result) => {
-      if (err) throw err;
-      res.json({ id, ...datosActualizados });
+      if (err) {
+        console.error('Error al actualizar el paciente:', err);
+        res.status(500).send('Error al actualizar el paciente');
+      } else {
+        res.json({ id, ...datosActualizados });
+      }
     });
   });
   
@@ -64,8 +87,27 @@ app.use(bodyParser.json());
   });
 
   app.get('/citas', (req, res) => {
-    connection.query('SELECT * FROM citas', (err, results) => {
-      if (err) throw err;
+    const query = `
+      SELECT 
+        c.id, 
+        c.fechaHora,
+        p.id AS pacienteId, 
+        p.nombre AS pacienteNombre, 
+        e.id AS especialistaId, 
+        e.nombre AS especialistaNombre
+      FROM 
+        citas c
+      JOIN 
+        pacientes p ON c.pacienteId = p.id
+      JOIN 
+        especialistas e ON c.especialistaId = e.id;
+    `;
+  
+    connection.query(query, (err, results) => {
+      if (err) {
+        console.error('Error al obtener citas:', err);
+        return res.status(500).json({ error: 'Error al obtener citas' });
+      }
       res.json(results);
     });
   });
@@ -88,10 +130,24 @@ app.use(bodyParser.json());
   
   app.put('/citas/:id', (req, res) => {
     const id = req.params.id;
-    const datosActualizados = req.body;
-    connection.query('UPDATE citas SET ? WHERE id = ?', [datosActualizados, id], (err, result) => {
-      if (err) throw err;
-      res.json({ id, ...datosActualizados });
+    const { pacienteId, especialistaId, fechaHora } = req.body;
+
+    const formattedDate = new Date(fechaHora).toISOString().slice(0, 19).replace('T', ' ');
+  
+    const query = `
+      UPDATE citas 
+      SET pacienteId = ?, especialistaId = ?, fechaHora = ? 
+      WHERE id = ?
+    `;
+  
+    connection.query(query, [pacienteId, especialistaId, formattedDate, id], (err, results) => {
+      if (err) {
+        console.error('Error updating the appointment:', err);
+        res.status(500).json({ error: 'Error updating the appointment' });
+        return;
+      }
+  
+      res.json({ message: 'Appointment updated successfully' });
     });
   });
   
